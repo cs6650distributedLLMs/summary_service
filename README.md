@@ -86,7 +86,7 @@ python client.py --action result --document-id your-document-id
 
 Submit text for summarization:
 ```bash
-curl -X POST http://localhost:5000/summarize \
+curl -X POST http://localhost:5001/summarize \
   -H "Content-Type: application/json" \
   -d '{
     "document_id": "doc123",
@@ -96,12 +96,12 @@ curl -X POST http://localhost:5000/summarize \
 
 Check status:
 ```bash
-curl http://localhost:5000/check-status/doc123
+curl http://localhost:5001/check-status/doc123
 ```
 
 Get result:
 ```bash
-curl http://localhost:5000/result/doc123
+curl http://localhost:5001/result/doc123
 ```
 
 ## Integration with OCR Service
