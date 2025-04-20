@@ -13,6 +13,7 @@ A containerized service for summarizing text using large language models. This s
 ## Architecture
 
 This service uses a container-based architecture:
+![Slide1](https://github.com/user-attachments/assets/8263deb4-c9c0-4a88-83c2-02b4e7653522)
 
 1. **Application Container** (Flask):
    - Handles API requests
