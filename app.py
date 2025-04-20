@@ -73,7 +73,7 @@ def call_grokx_api(text):
 Summary:"""
     
     payload = {
-        'model': 'grok-1',  # Specify the model you want to use
+        'model': 'grok-2-latest',  # Specify the model you want to use
         'messages': [
             {'role': 'system', 'content': 'You are a helpful assistant that specializes in summarizing documents.'},
             {'role': 'user', 'content': prompt}
