@@ -22,8 +22,9 @@ redis_client = redis.Redis(
 )
 
 # GrokX API configuration
-GROKX_API_KEY = os.environ['GROKX_API_KEY']
-GROKX_API_URL = os.environ['GROKX_API_URL']
+# Get API credentials from environment variables
+GROKX_API_URL = os.environ.get("GROK_API_URL", "https://api.x.ai/v1/chat/completions")
+GROKX_API_KEY = os.environ.get("GROK_API_KEY")
 
 def lambda_handler(event, context):
     """
