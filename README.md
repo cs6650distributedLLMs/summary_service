@@ -1,126 +1,123 @@
-# Text Summarization Service
+# Summarization Service
 
-A serverless, scalable service for summarizing text using GrokX AI, built with AWS Lambda, API Gateway, DynamoDB, and ElastiCache.
+A containerized service for summarizing text using large language models. This service complements the OCR service by providing text summarization capabilities through a simple REST API.
+
+## Features
+
+- **Asynchronous Processing**: Submit text for summarization and retrieve results when ready
+- **Status Tracking**: Monitor the status of summarization jobs
+- **Simple REST API**: Easy integration with existing applications
+- **Docker-based**: Runs in containers for easy deployment and scaling
+- **No IAM Required**: Works without AWS permissions or roles
 
 ## Architecture
 
-This service follows an asynchronous processing pattern:
+This service uses a container-based architecture:
 
-1. **API Gateway** serves as the entry point for all requests
-2. **Lambda Functions**:
-   - **API Handler**: Handles web requests and initiates summarization
-   - **Processor**: Performs the actual summarization asynchronously
-3. **DynamoDB**: Stores document text and summaries
-4. **ElastiCache Redis**: Stores document processing status for fast lookups
+1. **Application Container** (Flask):
+   - Handles API requests
+   - Processes text using LLM APIs
+   - Manages document state
+
+2. **Redis Container**:
+   - Tracks processing status
+   - Provides fast status lookups
+   - Persists data between restarts
 
 ## API Endpoints
 
-- `POST /summarize` - Submit text for summarization
-- `GET /check-status/{document_id}` - Check processing status
-- `GET /result/{document_id}` - Get the summarization result
-- `GET /health` - Service health check
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/summarize` | POST | Submit text for summarization |
+| `/check-status/{document_id}` | GET | Check processing status |
+| `/result/{document_id}` | GET | Get the summarization result |
+| `/health` | GET | Service health check |
 
 ## Setup and Deployment
 
 ### Prerequisites
 
-- AWS CLI configured with appropriate permissions
-- Terraform installed
-- Python 3.8+
-- GrokX API key
+- Docker and Docker Compose
+- LLM API key (from xAI or other provider)
 
-### Environment Variables
+### Installation
 
-Set the following environment variables before deployment:
+1. Clone this repository:
+   ```bash
+   git clone https://github.com/cs6650distributedLLMs/summary_service.git
+   cd summary_service
+   ```
 
-```bash
-export GROKX_API_KEY="your-grokx-api-key"
-export VPC_ID="vpc-xxxxxxxx"
-export SUBNET_IDS="subnet-xxxxxxxx,subnet-yyyyyyyy"
-```
+2. Set your API key:
+   ```bash
+   export GROKX_API_KEY=your-api-key-here
+   ```
 
-### Deployment
+3. Start the service:
+   ```bash
+   ./run.sh
+   ```
 
-1. Clone this repository
-2. Navigate to the repository directory
-3. Run the deployment script:
+## Usage
 
-```bash
-chmod +x deploy.sh
-./deploy.sh
-```
+### Using the Client Script
 
-The script will:
-- Create Lambda deployment packages
-- Initialize Terraform
-- Deploy all required infrastructure
-- Output the API URL
-
-## Client Usage
-
-A sample client is provided to demonstrate API usage:
+The included `client.py` script provides a simple way to interact with the API:
 
 ```bash
 # Check service health
-python client.py --api-url https://your-api-url --action health
+python client.py --action health
 
-# Submit text for summarization
-python client.py --api-url https://your-api-url --action summarize --text-file sample.txt --poll
+# Summarize text from a file
+python client.py --action summarize --text-file document.txt --poll
 
-# Check status
-python client.py --api-url https://your-api-url --action status --document-id <your-document-id>
+# Summarize text from stdin
+cat document.txt | python client.py --action summarize --poll
 
-# Get result
-python client.py --api-url https://your-api-url --action result --document-id <your-document-id>
+# Check status of a job
+python client.py --action status --document-id your-document-id
+
+# Get the result of a completed job
+python client.py --action result --document-id your-document-id
 ```
 
-## Integration with App Controller
+### API Examples
 
-To integrate with your existing app controller:
-
-1. Submit text for summarization:
-
-```
-POST https://your-api-url/summarize
-Content-Type: application/json
-
-{
-  "document_id": "your-document-id",
-  "text": "Text to summarize..."
-}
+Submit text for summarization:
+```bash
+curl -X POST http://localhost:5000/summarize \
+  -H "Content-Type: application/json" \
+  -d '{
+    "document_id": "doc123",
+    "text": "Text to summarize goes here..."
+  }'
 ```
 
-2. Poll for status:
-
-```
-GET https://your-api-url/check-status/your-document-id
-```
-
-3. Retrieve summary when status is "completed":
-
-```
-GET https://your-api-url/result/your-document-id
+Check status:
+```bash
+curl http://localhost:5000/check-status/doc123
 ```
 
-## Security Considerations
+Get result:
+```bash
+curl http://localhost:5000/result/doc123
+```
 
-- The Lambda functions run within a VPC for network isolation
-- API keys should be managed securely (consider using AWS Secrets Manager)
-- In production, restrict security group rules to specific CIDR blocks
+## Integration with OCR Service
 
-## Cost Optimization
+This summarization service is designed to work with the OCR service:
 
-- Lambda functions use minimal resources (256MB/512MB RAM)
-- DynamoDB uses on-demand pricing for cost efficiency
-- ElastiCache uses a t3.micro instance to minimize costs
+1. The OCR service extracts text from PDFs
+2. The app controller retrieves the extracted text
+3. The app controller sends the text to the summarization service
+4. The app controller retrieves the summary when ready
 
-## Monitoring and Maintenance
+## Troubleshooting
 
-- CloudWatch Logs are enabled for all Lambda functions
-- Consider setting up CloudWatch Alarms for error rates and duration metrics
-- Regularly update dependencies and the GrokX API integration
+- **View logs**: `docker-compose logs -f app`
+- **Restart the service**: `docker-compose down && docker-compose up -d`
+- **Check Redis**: `docker exec -it summary_service-redis-1 redis-cli`
 
-## Limitations
+## License
 
-- Maximum document size is limited by Lambda payload size (10MB)
-- Long-running summarizations are limited by Lambda timeout (5 minutes max)
+MIT
