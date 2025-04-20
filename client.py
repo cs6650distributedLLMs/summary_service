@@ -76,7 +76,7 @@ def main():
     Main function to demonstrate the usage of the summarization service
     """
     parser = argparse.ArgumentParser(description='Document Summarization Client')
-    parser.add_argument('--api-url', default='http://localhost:5000', help='Base URL of the summarization API')
+    parser.add_argument('--api-url', default='http://localhost:5001', help='Base URL of the summarization API')
     parser.add_argument('--text-file', help='Path to a text file to summarize')
     parser.add_argument('--document-id', help='Document ID for checking status or getting results')
     parser.add_argument('--action', choices=['summarize', 'status', 'result', 'health'], 
