@@ -105,12 +105,7 @@ curl http://localhost:5000/result/doc123
 
 ## Integration with OCR Service
 
-This summarization service is designed to work with the OCR service:
-
-1. The OCR service extracts text from PDFs
-2. The app controller retrieves the extracted text
-3. The app controller sends the text to the summarization service
-4. The app controller retrieves the summary when ready
+Use IP add: ```35.81.24.90```
 
 ## Troubleshooting
 
