@@ -3,9 +3,8 @@ import os
 import uuid
 import json
 import time
-import requests
+import boto3
 import redis
-import threading
 from datetime import datetime
 
 app = Flask(__name__)
@@ -14,8 +13,9 @@ app = Flask(__name__)
 REDIS_HOST = os.environ.get('REDIS_HOST', 'localhost')
 REDIS_PORT = int(os.environ.get('REDIS_PORT', 6379))
 REDIS_PASSWORD = os.environ.get('REDIS_PASSWORD', None)
-GROKX_API_KEY = os.environ.get('GROKX_API_KEY', '')
-GROKX_API_URL = os.environ.get('GROKX_API_URL', 'https://api.x.ai/v1/chat/completions')
+REDIS_SSL = os.environ.get('REDIS_SSL', 'false').lower() == 'true'
+SQS_QUEUE_URL = os.environ.get('SQS_QUEUE_URL', '')
+AWS_REGION = os.environ.get('AWS_REGION', 'us-west-2')
 
 # Initialize Redis connection
 try:
@@ -23,6 +23,7 @@ try:
         host=REDIS_HOST,
         port=REDIS_PORT,
         password=REDIS_PASSWORD,
+        ssl=REDIS_SSL,
         decode_responses=True
     )
     redis_client.ping()  # Test connection
@@ -47,128 +48,50 @@ except Exception as e:
     
     redis_client = MockRedis()
 
-# In-memory document storage (replace with a database in production)
-documents = {}
-
-# Process queue
-processing_threads = {}
-
-def call_grokx_api(text):
-    """
-    Call the GrokX API to summarize text
-    """
-    max_retries = 3
-    retry_delay = 2  # seconds
+# Initialize AWS SQS client
+try:
+    sqs_client = boto3.client('sqs', region_name=AWS_REGION)
+    print(f"SQS client initialized for region {AWS_REGION}")
+except Exception as e:
+    print(f"Warning: SQS client initialization failed: {str(e)}")
+    print("Using mock SQS client")
     
-    headers = {
-        'Authorization': f'Bearer {GROKX_API_KEY}',
-        'Content-Type': 'application/json'
-    }
-    
-    # Prepare the prompt for the LLM
-    prompt = f"""Please summarize the following text concisely while preserving the key information:
-
-{text}
-
-Summary:"""
-    
-    payload = {
-        'model': 'grok-2-latest',  # Specify the model you want to use
-        'messages': [
-            {'role': 'system', 'content': 'You are a helpful assistant that specializes in summarizing documents.'},
-            {'role': 'user', 'content': prompt}
-        ],
-        'temperature': 0.3,  # Lower temperature for more focused summaries
-        'max_tokens': 1000   # Adjust based on your summarization needs
-    }
-    
-    # Implement retry logic
-    for attempt in range(max_retries):
-        try:
-            response = requests.post(
-                GROKX_API_URL,
-                headers=headers,
-                json=payload,
-                timeout=30  # 30-second timeout
-            )
-            
-            response.raise_for_status()  # Raise exception for 4xx/5xx responses
-            response_data = response.json()
-            
-            # Extract the summary from the response
-            # Adjust this based on the actual GrokX API response format
-            if 'choices' in response_data and len(response_data['choices']) > 0:
-                summary = response_data['choices'][0]['message']['content']
-                return summary
-            else:
-                raise Exception("Unexpected API response format")
+    # Mock SQS client for environments without AWS access
+    class MockSQS:
+        def __init__(self):
+            self.messages = []
+        
+        def send_message(self, QueueUrl, MessageBody):
+            self.messages.append(MessageBody)
+            print(f"Message added to mock queue: {MessageBody[:100]}...")
+            # Process the message locally
+            try:
+                body = json.loads(MessageBody)
+                document_id = body.get('document_id')
+                # Set status to queued
+                redis_client.set(f"summarize_status:{document_id}", "queued")
                 
-        except requests.exceptions.RequestException as e:
-            if attempt < max_retries - 1:
-                print(f"API request failed (attempt {attempt+1}/{max_retries}): {str(e)}")
-                time.sleep(retry_delay * (2 ** attempt))  # Exponential backoff
-            else:
-                raise Exception(f"Failed to call GrokX API after {max_retries} attempts: {str(e)}")
-    
-    raise Exception("Failed to get summary from GrokX API")
-
-def process_document(document_id):
-    """
-    Background thread to process document summarization
-    """
-    try:
-        # Get the document
-        if document_id not in documents:
-            update_status(document_id, 'error', error_message='Document not found')
-            return
-        
-        document = documents[document_id]
-        text = document.get('original_text', '')
-        
-        if not text:
-            update_status(document_id, 'error', error_message='No text found to summarize')
-            return
-        
-        # Update status to processing
-        update_status(document_id, 'processing')
-        
-        # Call GrokX API to summarize the text
-        summary = call_grokx_api(text)
-        
-        # Update document with result
-        documents[document_id]['summary'] = summary
-        documents[document_id]['updated_at'] = datetime.utcnow().isoformat()
-        
-        # Update status to completed
-        update_status(document_id, 'completed')
-        
-    except Exception as e:
-        print(f"Error processing document {document_id}: {str(e)}")
-        update_status(document_id, 'error', error_message=str(e))
-    
-    finally:
-        # Remove from processing threads
-        if document_id in processing_threads:
-            del processing_threads[document_id]
-
-def update_status(document_id, status, error_message=None):
-    """
-    Update the status in both storage systems
-    """
-    try:
-        # Update Redis
-        redis_client.set(f"summarize_status:{document_id}", status)
-        
-        # Update in-memory document
-        if document_id in documents:
-            documents[document_id]['status'] = status
-            documents[document_id]['updated_at'] = datetime.utcnow().isoformat()
+                # For local processing, set a fake delay and status
+                import threading
+                def simulate_processing():
+                    time.sleep(5)  # Simulate queue delay
+                    redis_client.set(f"summarize_status:{document_id}", "processing")
+                    time.sleep(10)  # Simulate processing time
+                    
+                    # Simulate completion without actually calling the API
+                    redis_client.set(f"summarize_status:{document_id}", "completed")
+                    redis_client.set(f"summarize_result:{document_id}", 
+                                    "This is a simulated summary. In production, this would be the actual text summary from the X.AI API.")
+                
+                thread = threading.Thread(target=simulate_processing)
+                thread.daemon = True
+                thread.start()
+            except Exception as ex:
+                print(f"Error in mock processing: {str(ex)}")
             
-            if error_message and status == 'error':
-                documents[document_id]['error_message'] = error_message
+            return {'MessageId': str(uuid.uuid4())}
     
-    except Exception as e:
-        print(f"Error updating status for {document_id}: {str(e)}")
+    sqs_client = MockSQS()
 
 @app.route('/summarize', methods=['POST'])
 def summarize():
@@ -187,37 +110,46 @@ def summarize():
         
         # Check if document already exists and is being processed
         status = redis_client.get(f"summarize_status:{document_id}")
-        if status == 'processing':
+        if status and status in ['processing', 'queued']:
             return jsonify({
-                'status': 'already_processing',
-                'message': f'Document with ID {document_id} is already being processed'
+                'status': status,
+                'message': f'Document with ID {document_id} is already {status}'
             }), 200
         
         # Initialize status
-        redis_client.set(f"summarize_status:{document_id}", "processing")
+        redis_client.set(f"summarize_status:{document_id}", "queued")
         
-        # Store document
-        timestamp = datetime.utcnow().isoformat()
-        documents[document_id] = {
-            'document_id': document_id,
-            'original_text': text,
-            'status': 'processing',
-            'created_at': timestamp,
-            'updated_at': timestamp
-        }
+        # Store original text in Redis (this could be moved to DynamoDB for larger texts)
+        redis_client.set(f"summarize_text:{document_id}", text)
         
-        # Start background processing thread
-        thread = threading.Thread(target=process_document, args=(document_id,))
-        thread.daemon = True  # Daemonize thread to not block shutdown
-        thread.start()
-        
-        # Store thread reference
-        processing_threads[document_id] = thread
-        
-        return jsonify({
-            'status': 'ok',
-            'message': 'Summarization started'
-        }), 200
+        # Send message to SQS queue
+        try:
+            message_body = json.dumps({
+                'document_id': document_id,
+                'text': text,
+                'timestamp': datetime.utcnow().isoformat()
+            })
+            
+            response = sqs_client.send_message(
+                QueueUrl=SQS_QUEUE_URL,
+                MessageBody=message_body
+            )
+            
+            print(f"Message sent to SQS: {response.get('MessageId')}")
+            
+            return jsonify({
+                'status': 'queued',
+                'message': 'Summarization queued',
+                'document_id': document_id
+            }), 200
+            
+        except Exception as e:
+            print(f"Error sending to SQS: {str(e)}")
+            # If SQS fails, update status to error
+            redis_client.set(f"summarize_status:{document_id}", "error")
+            return jsonify({
+                'error': f'Failed to queue document: {str(e)}'
+            }), 500
     
     except Exception as e:
         print(f"Error in summarize request: {str(e)}")
@@ -230,15 +162,25 @@ def check_status(document_id):
         status = redis_client.get(f"summarize_status:{document_id}")
         
         if not status:
-            # Check in-memory storage if not in Redis
-            if document_id in documents:
-                status = documents[document_id].get('status', 'unknown')
-                # Update Redis cache
-                redis_client.set(f"summarize_status:{document_id}", status)
-            else:
-                return jsonify({'error': 'Document not found'}), 404
+            return jsonify({'error': 'Document not found'}), 404
         
-        return jsonify({'status': status}), 200
+        response = {
+            'status': status,
+            'document_id': document_id
+        }
+        
+        # Add queue position if queued
+        if status == 'queued':
+            response['message'] = 'Document is in queue for processing'
+        elif status == 'processing':
+            response['message'] = 'Document is being processed'
+        elif status == 'completed':
+            response['message'] = 'Document processing is complete'
+        elif status == 'error':
+            error_message = redis_client.get(f"summarize_error:{document_id}")
+            response['error'] = error_message if error_message else 'An unknown error occurred'
+        
+        return jsonify(response), 200
     
     except Exception as e:
         print(f"Error checking status: {str(e)}")
@@ -250,30 +192,37 @@ def get_result(document_id):
         # Get status from Redis
         status = redis_client.get(f"summarize_status:{document_id}")
         
+        if not status:
+            return jsonify({'error': 'Document not found'}), 404
+        
         # If status is completed, get the result
         if status == 'completed':
-            if document_id in documents:
+            summary = redis_client.get(f"summarize_result:{document_id}")
+            
+            if not summary:
                 return jsonify({
-                    'document_id': document_id,
-                    'summary': documents[document_id].get('summary', ''),
-                    'status': 'completed'
-                }), 200
-        elif status == 'error':
-            if document_id in documents:
-                return jsonify({
-                    'document_id': document_id,
-                    'error': documents[document_id].get('error_message', 'An error occurred'),
+                    'error': 'Summary not found even though status is completed',
                     'status': 'error'
-                }), 200
-        elif status == 'processing':
+                }), 500
+            
             return jsonify({
                 'document_id': document_id,
-                'status': 'processing',
-                'message': 'Document is still being processed'
+                'summary': summary,
+                'status': 'completed'
             }), 200
-        
-        # Document not found or status unknown
-        return jsonify({'error': 'Result not found or not ready'}), 404
+        elif status == 'error':
+            error_message = redis_client.get(f"summarize_error:{document_id}")
+            return jsonify({
+                'document_id': document_id,
+                'error': error_message if error_message else 'An unknown error occurred',
+                'status': 'error'
+            }), 200
+        else:
+            return jsonify({
+                'document_id': document_id,
+                'status': status,
+                'message': f'Document is still in {status} state'
+            }), 200
     
     except Exception as e:
         print(f"Error retrieving result: {str(e)}")
@@ -281,14 +230,28 @@ def get_result(document_id):
 
 @app.route('/health', methods=['GET'])
 def health():
-    return jsonify({'status': 'healthy'}), 200
+    try:
+        # Check Redis connection
+        redis_status = 'up' if redis_client.ping() else 'down'
+    except:
+        redis_status = 'down'
+    
+    # Check SQS connection (simplified)
+    sqs_status = 'up' if SQS_QUEUE_URL else 'mock' if isinstance(sqs_client, MockSQS) else 'unconfigured'
+    
+    return jsonify({
+        'status': 'healthy',
+        'redis': redis_status,
+        'sqs': sqs_status,
+        'timestamp': datetime.utcnow().isoformat()
+    }), 200
 
 if __name__ == '__main__':
     # Get port from environment or use default
-    port = int(os.environ.get('PORT', 5000))
+    port = int(os.environ.get('PORT', 5001))
     
     # Print API information
-    print(f"Starting Summarization Service on port {port}")
+    print(f"Starting Summarization API Service on port {port}")
     print("API Endpoints:")
     print("  POST /summarize - Submit text for summarization")
     print("  GET /check-status/<document_id> - Check processing status")

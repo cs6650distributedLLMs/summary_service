@@ -1,9 +1,11 @@
 version: '3'
 
 services:
-  # Summarization Service API
-  app:
-    build: .
+  # API Service - Handles client requests
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
     ports:
       - "5001:5000"
     environment:
@@ -11,11 +13,36 @@ services:
       - REDIS_HOST=redis
       - REDIS_PORT=6379
       - REDIS_PASSWORD=
-      - GROKX_API_KEY=${GROKX_API_KEY}
-      - GROKX_API_URL=https://api.x.ai/v1/chat/completions
+      - AWS_REGION=us-west-2
+      - SQS_QUEUE_URL=${SQS_QUEUE_URL:-}
+    volumes:
+      - ./app.py:/app/app.py
     depends_on:
       - redis
     restart: unless-stopped
+  
+  # Worker Service - Processes jobs from the queue
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+    environment:
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_PASSWORD=
+      - AWS_REGION=us-west-2
+      - SQS_QUEUE_URL=${SQS_QUEUE_URL}
+      - GROKX_API_KEY=${GROKX_API_KEY}
+      - GROKX_API_URL=https://api.x.ai/v1/chat/completions
+      - POLLING_INTERVAL=5
+    volumes:
+      - ./worker.py:/app/worker.py
+    depends_on:
+      - redis
+    restart: unless-stopped
+    # You can scale this by setting replicas
+    deploy:
+      replicas: 2  # Start with 2 worker instances
   
   # Redis for status tracking
   redis:
