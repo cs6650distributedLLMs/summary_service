@@ -13,8 +13,6 @@ services:
       - REDIS_HOST=redis
       - REDIS_PORT=6379
       - REDIS_PASSWORD=
-      - AWS_REGION=us-west-2
-      - SQS_QUEUE_URL=${SQS_QUEUE_URL:-}
     volumes:
       - ./app.py:/app/app.py
     depends_on:

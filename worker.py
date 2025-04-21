@@ -196,47 +196,53 @@ def process_message(message):
         logger.error(f"Error processing message: {str(e)}")
         return False
 
+# Replace the process_queue function with this version that uses Redis instead of SQS
 def process_queue():
     """
-    Main function to process messages from the SQS queue
+    Main function to process messages from a Redis-based queue instead of SQS
     """
-    logger.info(f"Starting to poll SQS queue: {SQS_QUEUE_URL}")
+    logger.info("Starting to poll Redis queue for documents")
     
     while True:
         try:
-            # Receive message from SQS queue
-            response = sqs_client.receive_message(
-                QueueUrl=SQS_QUEUE_URL,
-                MaxNumberOfMessages=1,
-                VisibilityTimeout=MAX_VISIBILITY_TIMEOUT,
-                WaitTimeSeconds=POLLING_INTERVAL
-            )
+            # Check for documents in the Redis queue
+            document_id = redis_client.lpop("summarize_queue")
             
-            messages = response.get('Messages', [])
-            
-            if not messages:
-                logger.debug("No messages in queue")
-                continue
+            if document_id:
+                logger.info(f"Found document to process: {document_id}")
                 
-            for message in messages:
-                receipt_handle = message['ReceiptHandle']
+                # Get the text from Redis
+                text = redis_client.get(f"summarize_text:{document_id}")
                 
-                logger.info(f"Processing message {message['MessageId']}")
-                
-                if process_message(message):
-                    # Delete the message from the queue
-                    sqs_client.delete_message(
-                        QueueUrl=SQS_QUEUE_URL,
-                        ReceiptHandle=receipt_handle
-                    )
-                    logger.info(f"Message {message['MessageId']} deleted from queue")
+                if text:
+                    try:
+                        # Update status to processing
+                        update_status(document_id, 'processing')
+                        
+                        # Process the document
+                        summary = call_xai_api(text)
+                        
+                        # Store the result
+                        redis_client.set(f"summarize_result:{document_id}", summary)
+                        
+                        # Update status to completed
+                        update_status(document_id, 'completed')
+                        
+                        logger.info(f"Document {document_id} processed successfully")
+                    except Exception as e:
+                        error_message = str(e)
+                        update_status(document_id, 'error', error_message)
+                        logger.error(f"Error processing document {document_id}: {error_message}")
                 else:
-                    logger.warning(f"Failed to process message {message['MessageId']}")
-                    # The message will become visible again after the visibility timeout
-            
+                    logger.error(f"No text found for document {document_id}")
+                    update_status(document_id, 'error', 'No text found to summarize')
+            else:
+                # No documents in queue, wait before checking again
+                time.sleep(POLLING_INTERVAL)
+                
         except Exception as e:
-            logger.error(f"Error polling queue: {str(e)}")
-            time.sleep(POLLING_INTERVAL)  # Wait before retrying
+            logger.error(f"Error in queue processing: {str(e)}")
+            time.sleep(POLLING_INTERVAL)
 
 def handle_shutdown(sig, frame):
     """

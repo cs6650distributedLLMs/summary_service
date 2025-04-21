@@ -119,42 +119,22 @@ def summarize():
         # Initialize status
         redis_client.set(f"summarize_status:{document_id}", "queued")
         
-        # Store original text in Redis (this could be moved to DynamoDB for larger texts)
+        # Store original text in Redis
         redis_client.set(f"summarize_text:{document_id}", text)
         
-        # Send message to SQS queue
-        try:
-            message_body = json.dumps({
-                'document_id': document_id,
-                'text': text,
-                'timestamp': datetime.utcnow().isoformat()
-            })
-            
-            response = sqs_client.send_message(
-                QueueUrl=SQS_QUEUE_URL,
-                MessageBody=message_body
-            )
-            
-            print(f"Message sent to SQS: {response.get('MessageId')}")
-            
-            return jsonify({
-                'status': 'queued',
-                'message': 'Summarization queued',
-                'document_id': document_id
-            }), 200
-            
-        except Exception as e:
-            print(f"Error sending to SQS: {str(e)}")
-            # If SQS fails, update status to error
-            redis_client.set(f"summarize_status:{document_id}", "error")
-            return jsonify({
-                'error': f'Failed to queue document: {str(e)}'
-            }), 500
+        # Add to Redis processing queue
+        redis_client.rpush("summarize_queue", document_id)
+        
+        return jsonify({
+            'status': 'queued',
+            'message': 'Summarization queued',
+            'document_id': document_id
+        }), 200
     
     except Exception as e:
         print(f"Error in summarize request: {str(e)}")
         return jsonify({'error': str(e)}), 500
-
+    
 @app.route('/check-status/<document_id>', methods=['GET'])
 def check_status(document_id):
     try:
