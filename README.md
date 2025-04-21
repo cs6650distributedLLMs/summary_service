@@ -13,14 +13,19 @@ A containerized service for summarizing text using large language models. This s
 ## Architecture
 
 This service uses a container-based architecture:
-![Slide1](https://github.com/user-attachments/assets/8263deb4-c9c0-4a88-83c2-02b4e7653522)
+![alt text](Slide1.jpeg)
 
 1. **Application Container** (Flask):
    - Handles API requests
    - Processes text using LLM APIs
    - Manages document state
 
-2. **Redis Container**:
+2. **Worker Containers (Multiple instances)**:
+   - Process documents from the queue
+   - Call the X.AI API for summarization
+   - Update document status and store results
+
+3. **Redis Container**:
    - Tracks processing status
    - Provides fast status lookups
    - Persists data between restarts
