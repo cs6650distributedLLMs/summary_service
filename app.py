@@ -248,7 +248,7 @@ def health():
 
 if __name__ == '__main__':
     # Get port from environment or use default
-    port = int(os.environ.get('PORT', 5001))
+    port = int(os.environ.get('PORT', 5000))
     
     # Print API information
     print(f"Starting Summarization API Service on port {port}")

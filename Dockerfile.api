@@ -10,14 +10,14 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY app.py .
 
 # Set environment variables
-ENV PORT=5001
+ENV PORT=5000
 ENV REDIS_HOST=redis
 ENV REDIS_PORT=6379
 ENV REDIS_PASSWORD=
 ENV FLASK_ENV=production
 
 # Expose port
-EXPOSE 5001
+EXPOSE 5000
 
 # Run the application
 CMD ["python", "app.py"]
