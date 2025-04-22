@@ -216,13 +216,9 @@ def health():
     except:
         redis_status = 'down'
     
-    # Check SQS connection (simplified)
-    sqs_status = 'up' if SQS_QUEUE_URL else 'mock' if isinstance(sqs_client, MockSQS) else 'unconfigured'
-    
     return jsonify({
         'status': 'healthy',
         'redis': redis_status,
-        'sqs': sqs_status,
         'timestamp': datetime.utcnow().isoformat()
     }), 200
 

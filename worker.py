@@ -150,9 +150,6 @@ Summary:"""
     raise Exception("Failed to get summary from X.AI API")
 
 def process_message(message):
-    """
-    Process a message from the SQS queue
-    """
     try:
         # Parse the message body
         body = json.loads(message['Body'])
@@ -199,7 +196,7 @@ def process_message(message):
 # Replace the process_queue function with this version that uses Redis instead of SQS
 def process_queue():
     """
-    Main function to process messages from a Redis-based queue instead of SQS
+    Main function to process messages from a Redis-based queue
     """
     logger.info("Starting to poll Redis queue for documents")
     
@@ -258,13 +255,7 @@ if __name__ == "__main__":
     
     # Log worker information
     logger.info("X.AI Summarization Worker")
-    logger.info(f"SQS Queue: {SQS_QUEUE_URL}")
     logger.info(f"X.AI API URL: {XAI_API_URL}")
-    
-    # Validate required configuration
-    if not SQS_QUEUE_URL:
-        logger.error("SQS_QUEUE_URL environment variable is required")
-        sys.exit(1)
         
     if not XAI_API_KEY:
         logger.error("GROKX_API_KEY environment variable is required")

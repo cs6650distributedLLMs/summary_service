@@ -131,7 +131,7 @@ def main():
         # Load text from file if provided
         if args.text_file:
             try:
-                with open(args.text_file, 'r') as f:
+                with open(args.text_file, 'r', encoding='utf-8') as f:
                     text = f.read()
             except Exception as e:
                 print(f"Error reading text file: {str(e)}")
@@ -144,6 +144,7 @@ def main():
         document_id = args.document_id or str(uuid.uuid4())
         
         print(f"Using document ID: {document_id}")
+        print(f"Using text: {text}")
         
         # Submit text for summarization
         result = summarize_text(api_url, document_id, text)

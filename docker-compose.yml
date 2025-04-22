@@ -7,7 +7,7 @@ services:
       context: .
       dockerfile: Dockerfile.api
     ports:
-      - "5000:5000"
+      - "5001:5000"
     environment:
       - PORT=5000
       - REDIS_HOST=redis
@@ -28,8 +28,6 @@ services:
       - REDIS_HOST=redis
       - REDIS_PORT=6379
       - REDIS_PASSWORD=
-      - AWS_REGION=us-west-2
-      - SQS_QUEUE_URL=${SQS_QUEUE_URL}
       - GROKX_API_KEY=${GROKX_API_KEY}
       - GROKX_API_URL=https://api.x.ai/v1/chat/completions
       - POLLING_INTERVAL=5
